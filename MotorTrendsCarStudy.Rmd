@@ -1,0 +1,148 @@
+---
+title: "Motor Trends Car Study"
+author: "Jason Battles"
+date: "October 15, 2016"
+output: 
+  pdf_document: 
+    highlight: espresso
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Executive Summary
+Motor Trend, a magazine about the automobile industry, requested this sample study to investigate the impact of several variables on on miles per gallan (MPG).  This study answers a few questions.
+
+1. Is an automatic or manual transmission better for MPG?
+2. Quantify the MPG difference between automatic and manual transmissions.
+3. Is there a more effective model for MPG prediction than simply transmission type?
+
+**This study reveals that vehicles with manual transmissions do ineed have a slightly better fuel efficienciency than those with automatic transmissions.  We also determine a better model of MPG prediction than transmission type.**
+
+## Environment Preparation
+We configure the environment, load the data set, perform some necessary data transformations, and verify that the data is loaded correctly.  This working data set has 32 observations of 11 variables.
+```{r}
+library(ggplot2)
+library(corrplot)
+data(mtcars)
+mtcars.orig <- mtcars   # Maintain original copy for Correlation Matrix
+mtcars$cyl <- factor(mtcars$cyl)
+mtcars$vs <- factor(mtcars$vs)
+mtcars$gear <- factor(mtcars$gear)
+mtcars$carb <- factor(mtcars$carb)
+mtcars$am <- factor(mtcars$am,labels=c('Automatic','Manual'))
+str(mtcars)
+```
+
+## Exploratory Data Analysis
+The focus of our study is `mpg` so let us first see how it is distributed. We find that the  median and mean are close to each other, so we can assume a normal distribution of data.  
+```{r}
+summary(mtcars$mpg)
+```
+
+In this analysis, we are interested in the effects of car transmission type (Automatic or Manual) on MPG so we start our exploration by creating a box plot *(Appendix 1 - Figure 1)*. This plot clearly depicts that manual transmissions tend to have higher MPG than automatic. 
+
+## Independent Variable Selection
+
+We now more closely explore the available variables to identify those which are most significant to any regression models that we may build.  We conduct this exploration with a correlation matrix between all the variables in the data set.  We learn that the variables `cyl`, `disp`, `hp`, `drat`, `wt`, `vs` and `am` *(transmission type)* have a strong correlation with dependent variable `mpg` *(sig.level = 0.0005)*.  Variables `qsec`, `gear`, and `carb` are NOT significant and will be excluded from further analysis.   **(Appendix 1 - Figure 2)**.
+
+This data is further analyzed and discussed in regression analysis section by fitting a linear model.
+
+## Regression Analysis
+
+In this section, we start building linear regression models to determine the optimal fit.  We compare the models using `anova` tables. 
+
+### Simple Linear Regression
+We begin our regression analysis with our original assumption that `mpg` is mostly dependent on `am` (transmission type). 
+```{r}
+first.mdl <- lm(mpg ~ factor(am), data = mtcars)
+summary(first.mdl)
+```
+
+We can see that the adjusted R squared value is only 0.338 which means that only **33.8%** of the regression variance can be explained by this univariate simple linear regression model. However, as outlined earlier by the Correlation Matrix, we must not forget there are several other predictor variables that we must take into account to see if any may lead to a better model for MPG.  
+
+## Multivariate Regression Model
+Although we identified the most highly correlated variables in the Correlation Matrix, we would like to sharpen our model further by conducting an **AIC** analysis using the `step` function.
+
+Using this method, we build an initial model with all variables as possible predictors and then perform an iterative model selection process using the `step` method.  This method runs `lm` multiple times to build multiple regression models and selects the best variables using both forward selection and backward elimination methods using the AIC algorithm.  The full output is included in *Appendex 1 - Figure 3*. 
+```{r echo=FALSE, include=FALSE}
+init.mdl <- lm(mpg ~ ., data = mtcars)
+best.mdl <- step(init.mdl, direction = "both")
+```
+
+```{r eval=FALSE}
+init.mdl <- lm(mpg ~ ., data = mtcars)
+best.mdl <- step(init.mdl, direction = "both")
+```
+The best model resulting in the lowest **AIC** value (AIC=61.65) is `lm(mpg ~ cyl + hp + wt + am, data = mtcars)`.  This model depicts the variables `cyl`, `hp`, and `wt` as confounders and `am` as the independent variable. Details of the model are depicted below.
+
+```{r}
+summary(best.mdl)
+```
+We observe that the R squared value of this updated model is 0.8401 which means that **84%** of the variability is now explained.   
+
+We now compare the base model (only transmission type as predictor) with the best model which we obtained earlier containing the additional confounder variables.
+```{r}
+anova(first.mdl, best.mdl)
+```
+
+The P-Value is highly significant so we may reject the null hypothesis that the confounder variables `cyl`, `hp`, and `wt` do not contribute to the accuracy of the model.  
+
+## Model Residuals and Diagnostics
+```{r}
+par(mfrow=c(2, 2))
+plot(best.mdl)
+```
+* The points in the Residuals vs. Fitted plot are randomly scattered on the plot which verifies the independence condition.
+* The Normal Q-Q plot consists of the points which mostly fall on the line indicating that the residuals are normally distributed.
+* The Scale-Location plot consists of points scattered in a constant band pattern, indicating constant variance. 
+* There are some distinct points of interest (outliers or leverage points) in the top right of the plots that may indicate values of increased leverage of outliers.
+
+## Conclusions
+1. Manual transmissions result in higher MPG than automatic transmissions.
+2. Manual transmissions will achieve and additional 1.8mpg compared to automatic transmissions.
+3. The optimal regression model includes `cyl`, `hp`, `wt`, `am` (transmission type)
+    + Basline for the model is a 4 cylinders engine.  6 cylinders will decrease `mpg` by 3.03.  
+    + 8 cylinders will decrease `mpg` by an additional 2.16.
+    + `mpg` will decrease by 2.49 for every 1000lb increase in `wt`
+    + `mpg` will slightly decrease by 0.32 with every increase in 10hp
+
+\newpage
+
+# Appendix 1
+
+## Figure 1 - Box Plot (MPG vs. Transmission Type)
+```{r}
+p <- ggplot(mtcars, aes(factor(am), mpg))
+p + geom_boxplot() + geom_jitter() +
+    labs(title="Box Plot of MPG vs. Transmission Type", x = "Transmission")
+```
+
+## Figure 2 - Multivariate Correlation Matrix
+```{r echo = FALSE}
+cor.mtest <- function(mat, conf.level = 0.95){
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat <- lowCI.mat <- uppCI.mat <- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    diag(lowCI.mat) <- diag(uppCI.mat) <- 1
+    for(i in 1:(n-1)){
+        for(j in (i+1):n){
+            tmp <- cor.test(mat[,i], mat[,j], conf.level = conf.level)
+            p.mat[i,j] <- p.mat[j,i] <- tmp$p.value
+            lowCI.mat[i,j] <- lowCI.mat[j,i] <- tmp$conf.int[1]
+            uppCI.mat[i,j] <- uppCI.mat[j,i] <- tmp$conf.int[2]
+        }
+    }
+    return(list(p.mat, lowCI.mat, uppCI.mat))
+}
+res1 <- cor.mtest(mtcars.orig,0.95)
+res2 <- cor.mtest(mtcars.orig,0.99)
+M <- cor(mtcars.orig)
+corrplot.mixed(M,p.mat = res2[[1]], sig.level=0.0005)
+```
+
+## Figure 3 - Output from AIC Step Analysis
+
+* This section removed due to page length restrictions*
